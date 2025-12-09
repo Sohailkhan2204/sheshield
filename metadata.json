@@ -1,0 +1,9 @@
+{
+  "name": "SheShield AI",
+  "description": "An always-on, multimodal safety companion that proactively detects danger using audio, vision, and context awareness.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
