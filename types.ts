@@ -1,8 +1,29 @@
 export enum RiskLevel {
   SAFE = 'SAFE',
-  CAUTION = 'CAUTION',
-  DANGER = 'DANGER',
+  UNCERTAIN = 'UNCERTAIN',
+  SUSPICIOUS = 'SUSPICIOUS',
+  DANGEROUS = 'DANGEROUS',
   CRITICAL = 'CRITICAL'
+}
+
+export interface AudioAnalysisDetails {
+  emotional_state: string;
+  distress_score: number;
+  keywords_detected: string[];
+  tone_analysis: string;
+}
+
+export interface ContextFactors {
+  time_risk: string;
+  location_risk: string;
+  route_deviation: string;
+  movement_pattern: string;
+}
+
+export interface ContextAnalysis {
+  contextual_factors: ContextFactors;
+  context_risk_score: number;
+  reasoning: string;
 }
 
 export interface RiskAssessment {
@@ -11,6 +32,8 @@ export interface RiskAssessment {
   reason: string;
   recommendedAction: string;
   detectedThreats: string[];
+  audioAnalysis?: AudioAnalysisDetails;
+  contextAnalysis?: ContextAnalysis;
 }
 
 export interface LocationData {

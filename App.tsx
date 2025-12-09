@@ -20,25 +20,32 @@ const App: React.FC = () => {
   const [showReport, setShowReport] = useState(false);
   const [reportText, setReportText] = useState("");
   const [logs, setLogs] = useState<string[]>([]);
+  
+  // Simulated movement state for demo purposes
+  const lastLocRef = useRef<{lat: number, lng: number, time: number} | null>(null);
 
   const cameraRef = useRef<CameraHandle>(null);
   const audioRef = useRef<AudioHandle>(null);
   const intervalRef = useRef<number | null>(null);
 
-  // Initialize location
+  // Initialize location and Safe Places
   useEffect(() => {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      (err) => console.error(err)
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const newLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setLocation(newLoc);
+        lastLocRef.current = { ...newLoc, time: Date.now() };
+        
+        // Update Safe Places only occasionally/initially to save API calls
+        if (safePlaces.length === 0) {
+            findSafePlaces(newLoc.lat, newLoc.lng).then(setSafePlaces);
+        }
+      },
+      (err) => console.error(err),
+      { enableHighAccuracy: true }
     );
+    return () => navigator.geolocation.clearWatch(watchId);
   }, []);
-
-  // Update Safe Places when location changes (Maps Grounding)
-  useEffect(() => {
-    if (location) {
-      findSafePlaces(location.lat, location.lng).then(setSafePlaces);
-    }
-  }, [location]);
 
   const runAnalysisLoop = useCallback(async () => {
     if (!cameraRef.current || !audioRef.current || !location) return;
@@ -46,36 +53,58 @@ const App: React.FC = () => {
     // 1. Gather Sensor Data
     const imageBase64 = cameraRef.current.capture();
     const audioBase64 = await audioRef.current.getLatestAudio();
-    const context = `Lat: ${location.lat}, Lng: ${location.lng}, Time: ${new Date().toLocaleTimeString()}`;
+    
+    // Simulate Context Data
+    // In a real app, this would be calculated from historical GPS points
+    const now = new Date();
+    const isNight = now.getHours() > 20 || now.getHours() < 6;
+    const movementType = "Walking"; // Placeholder for demo, would be calculated from speed
+    const deviation = "None (On known path)"; // Placeholder
+    
+    const context = `
+      Timestamp: ${now.toLocaleTimeString()}
+      Location: ${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}
+      Environment: ${isNight ? 'Night time' : 'Day time'}
+      Movement: ${movementType}
+      Route Deviation: ${deviation}
+      Safe Routes: [Home, Work, Gym] - User is currently near [Home]
+    `;
 
     // 2. Log Locally
     const timestamp = new Date().toISOString();
     
-    // 3. Send to Gemini (Flash Lite)
+    // 3. Send to Gemini
     const result = await assessRisk(imageBase64, audioBase64, context);
     
     setAssessment(result);
     setLogs(prev => [...prev.slice(-19), `[${timestamp}] Risk: ${result.riskLevel} - ${result.reason}`]);
 
     // 4. Auto-Response Logic (Demo)
-    if (result.riskLevel === RiskLevel.DANGER || result.riskLevel === RiskLevel.CRITICAL) {
-      // In a real app, this would trigger SOS SMS, loud alarm, etc.
+    if (result.riskLevel === RiskLevel.DANGEROUS || result.riskLevel === RiskLevel.CRITICAL) {
       console.warn("HIGH RISK DETECTED - INITIATING PROTOCOLS");
     }
 
   }, [location]);
 
-  const toggleMonitoring = () => {
-    if (isMonitoring) {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      setIsMonitoring(false);
-      setAssessment(prev => ({ ...prev, riskLevel: RiskLevel.SAFE, reason: "Monitoring Paused" }));
-    } else {
-      setIsMonitoring(true);
-      // Run immediately then interval
-      runAnalysisLoop();
-      intervalRef.current = window.setInterval(runAnalysisLoop, 6000); // Poll every 6 seconds
-    }
+  const startMonitoring = () => {
+    if (isMonitoring) return;
+    setIsMonitoring(true);
+    // Run immediately then interval
+    runAnalysisLoop();
+    intervalRef.current = window.setInterval(runAnalysisLoop, 6000); // Poll every 6 seconds
+  };
+
+  const stopMonitoring = () => {
+    if (!isMonitoring) return;
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    setIsMonitoring(false);
+    setAssessment(prev => ({ 
+      ...prev, 
+      riskLevel: RiskLevel.SAFE, 
+      reason: "Monitoring Paused", 
+      audioAnalysis: undefined,
+      contextAnalysis: undefined 
+    }));
   };
 
   const handleGenerateReport = async () => {
@@ -114,20 +143,36 @@ const App: React.FC = () => {
           level={assessment.riskLevel} 
           score={assessment.score} 
           reason={assessment.reason}
+          audioAnalysis={assessment.audioAnalysis}
+          contextAnalysis={assessment.contextAnalysis}
         />
 
         {/* Action Center */}
         <div className="space-y-4">
-          <button 
-            onClick={toggleMonitoring}
-            className={`w-full py-4 rounded-2xl font-bold text-lg shadow-lg transition-all transform active:scale-95 ${
-              isMonitoring 
-              ? 'bg-slate-800 text-slate-400 border border-slate-700' 
-              : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/30'
-            }`}
-          >
-            {isMonitoring ? 'Stop Monitoring' : 'Start Protection'}
-          </button>
+          <div className="flex gap-3">
+            <button 
+                onClick={startMonitoring}
+                disabled={isMonitoring}
+                className={`flex-1 py-4 rounded-2xl font-bold text-lg shadow-lg transition-all transform active:scale-95 ${
+                  isMonitoring 
+                  ? 'bg-slate-800 text-slate-600 cursor-not-allowed opacity-50' 
+                  : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/30'
+                }`}
+              >
+                Start Protection
+            </button>
+            <button 
+                onClick={stopMonitoring}
+                disabled={!isMonitoring}
+                className={`flex-1 py-4 rounded-2xl font-bold text-lg shadow-lg transition-all transform active:scale-95 ${
+                  !isMonitoring 
+                  ? 'bg-slate-800 text-slate-600 cursor-not-allowed opacity-50' 
+                  : 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-500/30'
+                }`}
+              >
+                Stop
+            </button>
+          </div>
 
           {assessment.riskLevel !== RiskLevel.SAFE && (
              <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
