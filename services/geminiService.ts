@@ -197,7 +197,10 @@ export const findSafePlaces = async (lat: number, lng: number): Promise<SafePlac
 
   } catch (error) {
     console.error("Safe Place Search Error:", error);
-    return [];
+    // Return fallback to prevent UI hanging and handle 429s gracefully
+    return [
+        { name: "Emergency Services", address: "Dial 911/112", distance: "N/A", type: "Emergency" }
+    ];
   }
 };
 
@@ -272,5 +275,52 @@ export const generateIncidentReport = async (
   } catch (error) {
     console.error("Reporting Error:", error);
     return "Error generating report.";
+  }
+};
+
+/**
+ * 4. EMERGENCY ALERT GENERATOR
+ * Uses gemini-2.5-flash for rapid alert generation.
+ */
+export const generateEmergencyAlert = async (
+  riskScore: number,
+  location: string,
+  reason: string,
+  vehicleInfo: string = "Unknown"
+): Promise<string> => {
+  try {
+    const prompt = `
+      Task:
+      Generate a concise message that can be sent to the user's emergency contacts.
+
+      Input:
+      - final_risk_score: ${riskScore}
+      - last_known_location: ${location}
+      - short_reason: ${reason}
+      - vehicle_info: ${vehicleInfo}
+      - timestamp: ${new Date().toLocaleString()}
+
+      Output:
+      "⚠️ Emergency Alert: <User Name> may be in danger.
+      Risk Level: <score>
+      Reason: <short_reason>.
+      Last Location: <location link>.
+      Vehicle: <vehicle info or 'Unknown'>.
+      This alert was automatically triggered by SheShield AI."
+    `;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+      config: {
+        systemInstruction: "You are an emergency alert generator for a women safety app.",
+        temperature: 0.2
+      }
+    });
+
+    return response.text || "⚠️ Emergency Alert: User in danger. Please contact immediately.";
+  } catch (error) {
+    console.error("Alert Generation Error:", error);
+    return "⚠️ Emergency Alert: User in danger. Location available in app.";
   }
 };
